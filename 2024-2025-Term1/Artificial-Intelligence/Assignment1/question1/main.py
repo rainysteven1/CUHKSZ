@@ -1,7 +1,10 @@
-from typing import List
+from typing import Dict, List, Tuple
 
+import json
 import numpy as np
+import os
 import random
+import time
 
 from graphviz import Digraph
 from queue import Queue
@@ -14,6 +17,11 @@ class Node(object):
         self.state = state
         self.prior = None
 
+    def __eq__(self, other):
+        if isinstance(other, Node):
+            return self.state == other.state
+        return False
+
     def set_prior(self, prior) -> None:
         self.prior = prior
 
@@ -23,52 +31,64 @@ class Node(object):
 
 class Graph(object):
     def __init__(
-        self, states: List, edges: np.ndarray, start: int = 0, end: int = -1
+        self, states: List, edges: np.ndarray, start: str = "S", end: str = "G"
     ) -> None:
         self.nodes = [Node(*item) for item in enumerate(states)]
         self.edges = edges
-        self.start = start
-        self.end = end
+        self.start = self.nodes[states.index(start)]
+        self.end = self.nodes[states.index(end)]
 
         self.num = len(states)
-        self.flags = [False for _ in range(self.num)]
+        self.flags = [False] * self.num
         self.visit_order = list()
 
     def reset(self) -> None:
         for node in self.nodes:
             node.reset()
-        self.flags = [False for _ in range(self.num)]
+        self.flags = [False] * self.num
         self.visit_order = list()
 
     def bfs(self) -> None:
         q = Queue()
-        self.flags[self.start] = True
-        self.visit_order.append(self.start)
-        q.put(self.nodes[self.start])
+        q.put(self.start)
 
         while not q.empty():
             temp = q.get()
+            self.visit_order.append(temp)
+
+            if temp == self.end:
+                break
+
             indices = list(
                 filter(lambda x: self.edges[temp.index][x] == 1, range(self.num))
             )
             for idx in indices:
-                if self.edges[temp.index][idx] == 1 and not self.flags[idx]:
-                    self.flags[idx] = True
-                    self.visit_order.append(idx)
+                if not self.flags[idx]:
                     self.nodes[idx].set_prior(temp)
                     q.put(self.nodes[idx])
+                    self.flags[idx] = True
 
     def dfs(self, randomed: bool = False) -> None:
-        def _dfs(index: int) -> None:
-            self.visit_order.append(index)
-            self.flags[index] = True
-            indices = list(filter(lambda x: self.edges[index][x] == 1, range(self.num)))
+        def _dfs(node: Node) -> bool:
+            self.visit_order.append(node)
+            self.flags[node.index] = True
+
+            if node == self.end:
+                return True
+
+            indices = list(
+                filter(lambda x: self.edges[node.index][x] == 1, range(self.num))
+            )
             if randomed:
                 random.shuffle(indices)
             for idx in indices:
-                if self.edges[index][idx] == 1 and not self.flags[idx]:
-                    self.nodes[idx].set_prior(self.nodes[index])
-                    _dfs(idx)
+                if self.edges[node.index][idx] == 1 and not self.flags[idx]:
+                    temp = self.nodes[idx]
+                    temp.set_prior(self.nodes[node.index])
+                    if _dfs(temp):
+                        return True
+
+            return False
 
         _dfs(self.start)
 
@@ -83,10 +103,9 @@ class Graph(object):
     def draw(self, name: str) -> None:
         path = self._get_path()
         dot = Digraph(comment=name)
-        print([self.nodes[idx].state for idx in self.visit_order])
+        print([node.state for node in self.visit_order])
 
-        for idx in self.visit_order:
-            node = self.nodes[idx]
+        for node in self.visit_order:
             dot.node(
                 node.state,
                 node.state,
@@ -94,7 +113,7 @@ class Graph(object):
                 shape="circle",
             )
 
-        for node in self.nodes:
+        for node in self.visit_order:
             if node.prior:
                 dot.edge(
                     node.prior.state,
@@ -102,32 +121,30 @@ class Graph(object):
                     color="red" if node in path else "black",
                 )
 
-        dot.render(name, format="png", view=True)
+        dot.render(os.path.join("result", name), format="png", view=True)
+
+
+def read_data(filename: str) -> Tuple[np.ndarray, Dict]:
+    with open(filename, "r") as f:
+        data = json.load(f)
+    edges = data["edges"]
+    states = sorted({part for edge in edges for part in edge.split("-")})
+    states.append(states.pop(0))
+
+    length = len(states)
+    matrix = np.zeros([length] * 2, dtype=int)
+    for edge in edges:
+        edge = edge.split("-")
+        row = states.index(edge[0])
+        col = states.index(edge[1])
+        matrix[row, col] = 1
+    return states, matrix
 
 
 if __name__ == "__main__":
     random.seed(42)
-
-    states = ["S", "a", "b", "c", "d", "e", "f", "h", "p", "q", "r", "G"]
-    edges = np.zeros((len(states), len(states)), dtype=int)
-    edges[0][4] = 1
-    edges[0][5] = 1
-    edges[0][8] = 1
-    edges[2][1] = 1
-    edges[3][1] = 1
-    edges[4][2] = 1
-    edges[4][5] = 1
-    edges[5][3] = 1
-    edges[5][7] = 1
-    edges[5][-2] = 1
-    edges[6][3] = 1
-    edges[6][-1] = 1
-    edges[7][8] = 1
-    edges[7][9] = 1
-    edges[8][9] = 1
-    edges[-2][6] = 1
-
-    g = Graph(states, edges)
+    filename = os.path.abspath(os.path.join(os.path.dirname(__file__), "data.json"))
+    g = Graph(*read_data(filename))
     g.bfs()
     g.draw("BFS")
     g.reset()

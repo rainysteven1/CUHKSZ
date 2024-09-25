@@ -1,0 +1,12 @@
+// DFS_random
+digraph {
+	S [label=S color=red shape=circle]
+	e [label=e color=red shape=circle]
+	r [label=r color=red shape=circle]
+	f [label=f color=red shape=circle]
+	G [label=G color=red shape=circle]
+	S -> e [color=red]
+	e -> r [color=red]
+	r -> f [color=red]
+	f -> G [color=red]
+}
